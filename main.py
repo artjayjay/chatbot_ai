@@ -1,53 +1,88 @@
 import os
 import requests
+
 from fastapi import FastAPI, Request
-from openai import OpenAI
+from fastapi.responses import PlainTextResponse
+from google import genai
+
+# =========================================================
+# CONFIG
+# =========================================================
+
+VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
+FACEBOOK_PAGE_ACCESS_TOKEN = os.getenv("FACEBOOK_PAGE_ACCESS_TOKEN")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+# Change this if you want to use another Gemini model
+GEMINI_MODEL = "gemini-3.7-flash"
+
+
+# =========================================================
+# APP
+# =========================================================
 
 app = FastAPI()
 
-# =========================
-# SETTINGS
-# =========================
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-FACEBOOK_PAGE_ACCESS_TOKEN = os.getenv("FACEBOOK_PAGE_ACCESS_TOKEN")
-VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
+# =========================================================
+# GEMINI
+# =========================================================
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
 
-# =========================
-# OPENAI
-# =========================
+def chat_with_gemini(message: str) -> str:
+
+    try:
+        response = gemini_client.models.generate_content(
+            model=GEMINI_MODEL, contents=message
+        )
+
+        reply = response.text
+
+        if not reply:
+            return "Sorry, I couldn't generate a response."
+
+        return reply.strip()
+
+    except Exception as e:
+        print("Gemini error:", e)
+
+        return "Sorry, I'm having trouble answering right now."
 
 
-def chat_with_gpt(message):
-    response = client.responses.create(model="gpt-5-mini", input=message)
-
-    return response.output_text
-
-
-# =========================
-# FACEBOOK
-# =========================
+# =========================================================
+# FACEBOOK SEND MESSAGE
+# =========================================================
 
 
-def send_facebook_message(sender_id, message):
+def send_facebook_message(sender_id: str, message: str):
 
-    url = "https://graph.facebook.com/v23.0/me/messages"
+    url = "https://graph.facebook.com/v26.0/me/messages"
 
-    data = {
-        "recipient": {"id": sender_id},
-        "message": {"text": message},
-        "access_token": FACEBOOK_PAGE_ACCESS_TOKEN,
-    }
+    params = {"access_token": FACEBOOK_PAGE_ACCESS_TOKEN}
 
-    requests.post(url, json=data)
+    data = {"recipient": {"id": sender_id}, "message": {"text": message}}
+
+    try:
+
+        response = requests.post(url, params=params, json=data, timeout=20)
+
+        print("Facebook response:", response.status_code)
+        print(response.text)
+
+        return response.ok
+
+    except Exception as e:
+
+        print("Facebook send error:", e)
+
+        return False
 
 
-# =========================
+# =========================================================
 # WEBHOOK VERIFICATION
-# =========================
+# =========================================================
 
 
 @app.get("/webhook")
@@ -59,37 +94,96 @@ async def verify_webhook(request: Request):
     token = params.get("hub.verify_token")
     challenge = params.get("hub.challenge")
 
+    print("Webhook verification request")
+
     if mode == "subscribe" and token == VERIFY_TOKEN:
-        return int(challenge)
 
-    return "Verification failed"
+        print("Webhook verified!")
+
+        return PlainTextResponse(challenge)
+
+    print("Webhook verification failed")
+
+    return PlainTextResponse("Verification failed", status_code=403)
 
 
-# =========================
-# RECEIVE FACEBOOK MESSAGE
-# =========================
+# =========================================================
+# FACEBOOK WEBHOOK
+# =========================================================
 
 
 @app.post("/webhook")
-async def receive_message(request: Request):
+async def facebook_webhook(request: Request):
 
-    data = await request.json()
+    try:
 
-    for entry in data.get("entry", []):
+        data = await request.json()
 
-        for messaging in entry.get("messaging", []):
+        print("Facebook webhook received:")
+        print(data)
 
-            sender_id = messaging["sender"]["id"]
+        # Check that this is a Facebook Page event
+        if data.get("object") != "page":
+            return {"status": "ignored"}
 
-            message = messaging.get("message", {})
-            text = message.get("text")
+        # Process entries
+        for entry in data.get("entry", []):
 
-            if text:
+            for event in entry.get("messaging", []):
 
-                # Send message to OpenAI
-                reply = chat_with_gpt(text)
+                # -------------------------------------------------
+                # Get sender
+                # -------------------------------------------------
 
-                # Send AI response back to Messenger
+                sender = event.get("sender", {})
+                sender_id = sender.get("id")
+
+                if not sender_id:
+                    continue
+
+                # -------------------------------------------------
+                # Get message
+                # -------------------------------------------------
+
+                message = event.get("message", {})
+
+                text = message.get("text")
+
+                # Ignore messages without text
+                if not text:
+                    continue
+
+                print("User:", text)
+
+                # -------------------------------------------------
+                # Ask Gemini
+                # -------------------------------------------------
+
+                reply = chat_with_gemini(text)
+
+                print("Gemini:", reply)
+
+                # -------------------------------------------------
+                # Send reply to Facebook
+                # -------------------------------------------------
+
                 send_facebook_message(sender_id, reply)
 
-    return {"status": "ok"}
+        return {"status": "ok"}
+
+    except Exception as e:
+
+        print("Webhook error:", e)
+
+        return {"status": "error", "message": str(e)}
+
+
+# =========================================================
+# HOME
+# =========================================================
+
+
+@app.get("/")
+async def home():
+
+    return {"status": "online", "message": "Facebook Gemini chatbot is running!"}
