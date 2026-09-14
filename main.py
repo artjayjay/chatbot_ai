@@ -17,7 +17,7 @@ FACEBOOK_PAGE_ACCESS_TOKEN = os.getenv("FACEBOOK_PAGE_ACCESS_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # Use a Gemini model available to your API key
-GEMINI_MODEL = "gemini-3.6-flash"
+GEMINI_MODEL = "gemini-3.5-flash-lite"
 
 # Number of times Gemini will be retried after temporary errors
 GEMINI_MAX_RETRIES = 3
