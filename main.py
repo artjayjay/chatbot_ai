@@ -14,32 +14,34 @@ from google import genai
 # =========================================================
 
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
+
 FACEBOOK_PAGE_ACCESS_TOKEN = os.getenv("FACEBOOK_PAGE_ACCESS_TOKEN")
+
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# IMPORTANT:
+
+# =========================================================
+# GEMINI MODELS
+# =========================================================
+
 # Text model
 TEXT_MODEL = "gemini-3.5-flash-lite"
 
 # Image editing model
 IMAGE_MODEL = "gemini-3.1-flash-image"
 
-# Number of retries
+
+# =========================================================
+# SETTINGS
+# =========================================================
+
 GEMINI_MAX_RETRIES = 3
 
-# Your public website URL
-#
-# Example:
-# https://your-app.onrender.com
-#
-# IMPORTANT:
-# Set this in Render Environment Variables.
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
 
-# Folder where edited images are temporarily stored
+
 OUTPUT_FOLDER = "generated_images"
 
-# Delete generated image after this many seconds
 IMAGE_DELETE_AFTER_SECONDS = 600
 
 
@@ -87,12 +89,48 @@ gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 # =========================================================
 
 # Fine for testing.
-# For production, use Redis or a database.
+#
+# For production:
+# use Redis or a database.
+
 PROCESSED_MESSAGES = set()
 
 
 # =========================================================
-# HELPER: CLEAN UP OLD IMAGE
+# CHECK GEMINI COMMAND
+# =========================================================
+
+
+def is_gemini_command(text: str) -> bool:
+
+    if not text:
+        return False
+
+    return text.lower().startswith("gemini")
+
+
+# =========================================================
+# EXTRACT GEMINI PROMPT
+# =========================================================
+
+
+def extract_gemini_prompt(text: str) -> str:
+
+    if not text:
+        return ""
+
+    # Remove "gemini"
+    prompt = text[6:].strip()
+
+    # Remove optional quotation marks
+    if len(prompt) >= 2 and prompt[0] == '"' and prompt[-1] == '"':
+        prompt = prompt[1:-1].strip()
+
+    return prompt
+
+
+# =========================================================
+# DELETE IMAGE LATER
 # =========================================================
 
 
@@ -130,7 +168,9 @@ def chat_with_gemini(message: str) -> str:
 
         try:
 
-            print(f"Gemini text request " f"(attempt {attempt}/{GEMINI_MAX_RETRIES})")
+            print(
+                f"Gemini text request " f"(attempt {attempt}/" f"{GEMINI_MAX_RETRIES})"
+            )
 
             response = gemini_client.models.generate_content(
                 model=TEXT_MODEL, contents=message
@@ -140,7 +180,7 @@ def chat_with_gemini(message: str) -> str:
 
                 return response.text.strip()
 
-            return "Sorry, I couldn't generate a response."
+            return "Sorry, I couldn't " "generate a response."
 
         except Exception as e:
 
@@ -150,15 +190,15 @@ def chat_with_gemini(message: str) -> str:
 
                 wait_time = attempt * 2
 
-                print(f"Retrying Gemini in {wait_time} seconds...")
+                print(f"Retrying Gemini in " f"{wait_time} seconds...")
 
                 time.sleep(wait_time)
 
             else:
 
-                return "Sorry, I'm having trouble " "answering right now."
+                return "Sorry, I'm having " "trouble answering " "right now."
 
-    return "Sorry, I couldn't generate a response."
+    return "Sorry, I couldn't " "generate a response."
 
 
 # =========================================================
@@ -184,7 +224,7 @@ def download_facebook_image(image_url: str):
 
         mime_type = response.headers.get("Content-Type", "image/jpeg")
 
-        # Remove charset if present
+        # Remove charset
         #
         # image/jpeg; charset=utf-8
         #
@@ -225,24 +265,27 @@ def edit_image_with_gemini(image_bytes: bytes, mime_type: str, prompt: str):
         try:
 
             print("===================================")
+
             print("GEMINI IMAGE EDITING")
+
             print("===================================")
 
-            print(f"Attempt {attempt}/{GEMINI_MAX_RETRIES}")
+            print(f"Attempt {attempt}/" f"{GEMINI_MAX_RETRIES}")
 
             print("User instruction:", prompt)
 
             # Convert image to Base64
             image_base64 = base64.b64encode(image_bytes).decode("utf-8")
 
-            # Send image + instruction to Gemini
+            # Send image + instruction
+            # to Gemini
+
             interaction = gemini_client.interactions.create(
                 model=IMAGE_MODEL,
                 input=[
                     {"type": "text", "text": prompt},
                     {"type": "image", "data": image_base64, "mime_type": mime_type},
                 ],
-                # Request image output
                 response_format={"type": "image", "mime_type": "image/jpeg"},
             )
 
@@ -251,11 +294,11 @@ def edit_image_with_gemini(image_bytes: bytes, mime_type: str, prompt: str):
 
             if generated_image:
 
-                print("Gemini generated edited image!")
+                print("Gemini generated " "edited image!")
 
                 generated_bytes = base64.b64decode(generated_image.data)
 
-                # Create unique filename
+                # Unique filename
                 filename = f"{uuid.uuid4().hex}.png"
 
                 file_path = os.path.join(OUTPUT_FOLDER, filename)
@@ -270,20 +313,20 @@ def edit_image_with_gemini(image_bytes: bytes, mime_type: str, prompt: str):
                 # Delete later
                 delete_image_later(file_path)
 
-                # Create public URL
+                # Public URL
                 if not PUBLIC_BASE_URL:
 
-                    print("PUBLIC_BASE_URL is missing")
+                    print("PUBLIC_BASE_URL " "is missing")
 
                     return None
 
-                public_url = f"{PUBLIC_BASE_URL}" f"/generated-image/{filename}"
+                public_url = f"{PUBLIC_BASE_URL}" f"/generated-image/" f"{filename}"
 
                 print("Public edited image URL:", public_url)
 
                 return public_url
 
-            print("Gemini did not return an image.")
+            print("Gemini did not " "return an image.")
 
             return None
 
@@ -295,7 +338,7 @@ def edit_image_with_gemini(image_bytes: bytes, mime_type: str, prompt: str):
 
                 wait_time = attempt * 2
 
-                print(f"Retrying in {wait_time} seconds...")
+                print(f"Retrying in " f"{wait_time} seconds...")
 
                 time.sleep(wait_time)
 
@@ -307,7 +350,7 @@ def edit_image_with_gemini(image_bytes: bytes, mime_type: str, prompt: str):
 
 
 # =========================================================
-# SERVE GENERATED IMAGE PUBLICLY
+# SERVE GENERATED IMAGE
 # =========================================================
 
 
@@ -315,7 +358,10 @@ def edit_image_with_gemini(image_bytes: bytes, mime_type: str, prompt: str):
 async def get_generated_image(filename: str):
 
     # Security:
-    # Prevent paths such as ../../something
+    # Prevent paths such as:
+    #
+    # ../../something
+
     safe_filename = os.path.basename(filename)
 
     file_path = os.path.join(OUTPUT_FOLDER, safe_filename)
@@ -380,7 +426,7 @@ def send_facebook_image(sender_id: str, image_url: str):
 
     try:
 
-        print("Sending edited image to Facebook...")
+        print("Sending edited image " "to Facebook...")
 
         print("Image URL:", image_url)
 
@@ -441,22 +487,25 @@ async def facebook_webhook(request: Request):
         data = await request.json()
 
         print("===================================")
+
         print("FACEBOOK WEBHOOK")
+
         print(data)
+
         print("===================================")
 
-        # Only process Facebook Page events
-
+        # Only Facebook Page events
         if data.get("object") != "page":
 
             return {"status": "ignored"}
 
-        # Loop through entries
+        # =====================================================
+        # LOOP THROUGH ENTRIES
+        # =====================================================
 
         for entry in data.get("entry", []):
 
             # Loop through messages
-
             for event in entry.get("messaging", []):
 
                 # =================================================
@@ -477,8 +526,7 @@ async def facebook_webhook(request: Request):
 
                 message = event.get("message", {})
 
-                # Ignore messages sent by the Page itself
-
+                # Ignore Page echo
                 if message.get("is_echo"):
 
                     print("Echo message ignored")
@@ -497,9 +545,11 @@ async def facebook_webhook(request: Request):
 
                     continue
 
-                # Prevent duplicate processing
+                # =================================================
+                # DUPLICATE PROTECTION
+                # =================================================
 
-                if message_id in PROCESSED_MESSAGES:
+                if message_id in (PROCESSED_MESSAGES):
 
                     print("Duplicate message ignored:", message_id)
 
@@ -526,6 +576,12 @@ async def facebook_webhook(request: Request):
                 print("Attachments:", attachments)
 
                 # =================================================
+                # CHECK GEMINI COMMAND
+                # =================================================
+
+                gemini_command = is_gemini_command(text)
+
+                # =================================================
                 # IMAGE MESSAGE
                 # =================================================
 
@@ -536,7 +592,6 @@ async def facebook_webhook(request: Request):
                     attachment_type = attachment.get("type")
 
                     # Only process images
-
                     if attachment_type != "image":
 
                         continue
@@ -561,20 +616,54 @@ async def facebook_webhook(request: Request):
                         continue
 
                     # ---------------------------------------------
-                    # USER INSTRUCTION
+                    # CHECK GEMINI COMMAND
                     # ---------------------------------------------
 
-                    if text:
+                    if not gemini_command:
 
-                        prompt = text
+                        # Image received without
+                        # the "gemini" command.
 
-                    else:
-
-                        prompt = (
-                            "Analyze this image and describe " "what you see in detail."
+                        send_facebook_message(
+                            sender_id,
+                            (
+                                "I received your image.\n\n"
+                                "To use AI with this image, "
+                                "send a message like:\n\n"
+                                'gemini "describe this image"\n\n'
+                                "or\n\n"
+                                'gemini "remove the background"'
+                            ),
                         )
 
-                    print("Image instruction:", prompt)
+                        continue
+
+                    # ---------------------------------------------
+                    # GET USER INSTRUCTION
+                    # ---------------------------------------------
+
+                    prompt = extract_gemini_prompt(text)
+
+                    # ---------------------------------------------
+                    # EMPTY GEMINI COMMAND
+                    # ---------------------------------------------
+
+                    if not prompt:
+
+                        send_facebook_message(
+                            sender_id,
+                            (
+                                "Please provide an "
+                                "instruction after "
+                                '"gemini".\n\n'
+                                "Example:\n"
+                                'gemini "describe this image"'
+                            ),
+                        )
+
+                        continue
+
+                    print("Image Gemini instruction:", prompt)
 
                     # ---------------------------------------------
                     # DOWNLOAD IMAGE
@@ -585,25 +674,29 @@ async def facebook_webhook(request: Request):
                     if not image_bytes:
 
                         send_facebook_message(
-                            sender_id, ("Sorry, I couldn't download " "your image.")
+                            sender_id, ("Sorry, I couldn't " "download your image.")
                         )
 
                         continue
 
                     # ---------------------------------------------
-                    # EDIT IMAGE WITH GEMINI
+                    # TELL USER
                     # ---------------------------------------------
 
                     send_facebook_message(
-                        sender_id, "🖼️ Editing your image. Please wait..."
+                        sender_id, ("🖼️ Processing your image. " "Please wait...")
                     )
+
+                    # ---------------------------------------------
+                    # EDIT IMAGE
+                    # ---------------------------------------------
 
                     edited_image_url = edit_image_with_gemini(
                         image_bytes, mime_type, prompt
                     )
 
                     # ---------------------------------------------
-                    # SEND EDITED IMAGE
+                    # SEND RESULT
                     # ---------------------------------------------
 
                     if edited_image_url:
@@ -612,16 +705,16 @@ async def facebook_webhook(request: Request):
 
                         if success:
 
-                            print("Edited image sent successfully!")
+                            print("Edited image " "sent successfully!")
 
                         else:
 
                             send_facebook_message(
                                 sender_id,
                                 (
-                                    "I edited the image, but "
-                                    "I had trouble sending it "
-                                    "back."
+                                    "I edited the image, "
+                                    "but I had trouble "
+                                    "sending it back."
                                 ),
                             )
 
@@ -629,7 +722,7 @@ async def facebook_webhook(request: Request):
 
                         send_facebook_message(
                             sender_id,
-                            ("Sorry, I couldn't edit that " "image right now."),
+                            ("Sorry, I couldn't " "process that image " "right now."),
                         )
 
                 # =================================================
@@ -640,11 +733,67 @@ async def facebook_webhook(request: Request):
 
                     print("User text:", text)
 
-                    reply = chat_with_gemini(text)
+                    # =================================================
+                    # GEMINI COMMAND
+                    # =================================================
 
-                    print("Gemini reply:", reply)
+                    if gemini_command:
 
-                    send_facebook_message(sender_id, reply)
+                        ai_prompt = extract_gemini_prompt(text)
+
+                        # -----------------------------------------
+                        # EMPTY COMMAND
+                        # -----------------------------------------
+
+                        if not ai_prompt:
+
+                            send_facebook_message(
+                                sender_id,
+                                (
+                                    "Please provide a "
+                                    "message after "
+                                    '"gemini".\n\n'
+                                    "Example:\n"
+                                    'gemini "Hello AI."'
+                                ),
+                            )
+
+                        else:
+
+                            print("Gemini command detected")
+
+                            print("Gemini prompt:", ai_prompt)
+
+                            # -------------------------------------
+                            # SEND TO GEMINI
+                            # -------------------------------------
+
+                            reply = chat_with_gemini(ai_prompt)
+
+                            print("Gemini reply:", reply)
+
+                            # -------------------------------------
+                            # SEND GEMINI RESPONSE
+                            # -------------------------------------
+
+                            send_facebook_message(sender_id, reply)
+
+                    # =================================================
+                    # NORMAL CONVERSATION
+                    # =================================================
+
+                    else:
+
+                        print("Normal conversation " "message")
+
+                        # IMPORTANT:
+                        #
+                        # This message is NOT sent to Gemini.
+                        #
+                        # Put your own normal chatbot
+                        # behavior here.
+
+                        send_facebook_message(sender_id, ("You said: " f"{text}"))
 
                 # =================================================
                 # UNSUPPORTED ATTACHMENT
@@ -653,7 +802,7 @@ async def facebook_webhook(request: Request):
                 if attachments and not image_found and not text:
 
                     send_facebook_message(
-                        sender_id, ("I currently support text " "and image messages.")
+                        sender_id, ("I currently support " "text and image messages.")
                     )
 
         return {"status": "ok"}
@@ -661,8 +810,11 @@ async def facebook_webhook(request: Request):
     except Exception as e:
 
         print("===================================")
+
         print("WEBHOOK ERROR")
+
         print(repr(e))
+
         print("===================================")
 
         return {"status": "error", "message": str(e)}
@@ -678,5 +830,9 @@ async def home():
 
     return {
         "status": "online",
-        "message": ("Facebook Gemini AI chatbot " "with image editing is running!"),
+        "message": (
+            "Facebook Gemini AI chatbot "
+            "with command-based AI "
+            "and image editing is running!"
+        ),
     }
