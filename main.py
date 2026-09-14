@@ -793,7 +793,7 @@ async def facebook_webhook(request: Request):
                         # Put your own normal chatbot
                         # behavior here.
 
-                        send_facebook_message(sender_id, ("You said: " f"{text}"))
+                        # send_facebook_message(sender_id, ("You said: " f"{text}"))
 
                 # =================================================
                 # UNSUPPORTED ATTACHMENT
