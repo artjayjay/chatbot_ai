@@ -243,7 +243,7 @@ def edit_image_with_gemini(image_bytes: bytes, mime_type: str, prompt: str):
                     {"type": "image", "data": image_base64, "mime_type": mime_type},
                 ],
                 # Request image output
-                response_format={"type": "image", "mime_type": "image/png"},
+                response_format={"type": "image", "mime_type": "image/jpeg"},
             )
 
             # Get generated image
